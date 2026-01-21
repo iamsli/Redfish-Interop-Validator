@@ -197,35 +197,32 @@ def main(argslist=None, configfile=None):
             profile_version = profile.get('ProfileVersion')
 
             # Create a list of profiles, required imports, and show their hashes
+            # Note: getProfiles() merges included profile resources into the parent profile
             included_profiles, required_by_resource = getProfiles(profile, [os.getcwd()] + my_paths, online=args.online_profiles)
-
-            all_profiles = [profile] + included_profiles
 
             my_logger.info('Profile Hashes (included by {}): '.format(file_name))
             for inner_profile in included_profiles:
-                inner_profile_name = profile.get('ProfileName')
-                inner_profile_version = profile.get('ProfileVersion')
+                inner_profile_name = inner_profile.get('ProfileName')
+                inner_profile_version = inner_profile.get('ProfileVersion')
                 my_logger.info('\t{} {}, dict md5 hash: {}'.format(inner_profile_name, inner_profile_version, hashProfile(inner_profile)))
 
             my_logger.info('Profile Hashes (required by Resource): '.format(file_name))
             for inner_profile in required_by_resource:
-                inner_profile_name = profile.get('ProfileName')
-                inner_profile_version = profile.get('ProfileVersion')
+                inner_profile_name = inner_profile.get('ProfileName')
+                inner_profile_version = inner_profile.get('ProfileVersion')
                 my_logger.info('\t{} {}, dict md5 hash: {}'.format(inner_profile_name, inner_profile_version, hashProfile(inner_profile)))
 
-            for profile_to_process in all_profiles:
-                processing_profile_name = profile_to_process.get('ProfileName')
-                if processing_profile_name not in processed_profiles:
-                    processed_profiles.add(profile_name)
-                else:
-                    my_logger.warning("Import Warning: Profile {} already processed".format({}))
+            # Only validate the parent profile since included profiles are already merged into it
+            # Validating included profiles separately would cause duplicate URI traversals
+            if profile_name not in processed_profiles:
+                processed_profiles.add(profile_name)
 
                 if 'single' in pmode:
-                    success, new_results, _, _ = validateSingleURI(ppath, profile_to_process, 'Target', expectedJson=jsonData)
+                    success, new_results, _, _ = validateSingleURI(ppath, profile, 'Target', expectedJson=jsonData)
                 elif 'tree' in pmode:
-                    success, new_results, _, _ = validateURITree(ppath, profile_to_process, 'Target', expectedJson=jsonData)
+                    success, new_results, _, _ = validateURITree(ppath, profile, 'Target', expectedJson=jsonData)
                 else:
-                    success, new_results, _, _ = validateURITree('/redfish/v1/', profile_to_process, 'ServiceRoot', expectedJson=jsonData)
+                    success, new_results, _, _ = validateURITree('/redfish/v1/', profile, 'ServiceRoot', expectedJson=jsonData)
                 if results is None:
                     results = new_results
                 else:
@@ -236,8 +233,8 @@ def main(argslist=None, configfile=None):
                             results[item_name]['messages'].extend(item['messages'])
                         else:
                             results[item_name] = item
-                        # resultsNew = {profileName+key: resultsNew[key] for key in resultsNew if key in results}
-                        # results.update(resultsNew)
+            else:
+                my_logger.warning("Profile {} already processed, skipping".format(profile_name))
     except traverseInterop.AuthenticationError as e:
         # log authentication error and terminate program
         my_logger.error('{}'.format(e))
@@ -259,10 +256,10 @@ def main(argslist=None, configfile=None):
     for k, my_result in results.items():
 
         for msg in my_result['messages']:
-            if msg.result in [testResultEnum.PASS]:
+            if msg.result == testResultEnum.PASS:
                 final_counts['pass'] += 1
-            if msg.result in [testResultEnum.NOT_TESTED]:
-                final_counts['not_tested'] += 1
+            elif msg.result == testResultEnum.NOT_TESTED:
+                final_counts['nottested'] += 1
 
         warns = [x for x in my_result['records'] if x.levelno == logger.Level.WARN]
         errors = [x for x in my_result['records'] if x.levelno == logger.Level.ERROR]
@@ -292,16 +289,16 @@ def main(argslist=None, configfile=None):
 
     my_logger.info("\nResults Summary:")
     my_logger.info(", ".join([
-        'Pass: {}'.format(final_counts['pass']),
-        'Fail: {}'.format(final_counts['error']),
-        'Warning: {}'.format(final_counts['warning']),
-        'Not Tested: {}'.format(final_counts['nottested']),
+        'Pass: {}'.format(final_counts.get('pass', 0)),
+        'Fail: {}'.format(final_counts.get('fail', 0) + final_counts.get('error', 0)),
+        'Warning: {}'.format(final_counts.get('warn', 0) + final_counts.get('warning', 0)),
+        'Not Tested: {}'.format(final_counts.get('nottested', 0)),
         ]))
 
-    success = final_counts['error'] == 0
+    success = (final_counts.get('fail', 0) + final_counts.get('error', 0)) == 0
 
     if not success:
-        my_logger.error("Validation has failed: {} problems found".format(final_counts['error']))
+        my_logger.error("Validation has failed: {} problems found".format(final_counts.get('fail', 0) + final_counts.get('error', 0)))
     else:
         my_logger.info("Validation has succeeded.")
         status_code = 0

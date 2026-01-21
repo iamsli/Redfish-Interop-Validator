@@ -77,24 +77,29 @@ def dict_merge(dct, merge_dct):
         'Recommended': 3,
         'IfImplemented': 2,
         'Supported': 1,
-        None: 4 # per DSP0272 when unspecified Requirement, it's considered Mandatory
     }
 
     def get_more_restrictive_requirement(req1, req2, requirement_type='ReadRequirement'):
         """Returns the more restrictive requirement
 
-        For ReadRequirement: returns value with hierarchy 4 (Mandatory)
-        For WriteRequirement: returns value with hierarchy 0 (least restrictive)
+        For ReadRequirement: returns the requirement with highest hierarchy (Mandatory > Recommended > IfImplemented > Supported)
+                            Unspecified (None) is treated as "Mandatory" per DSP0272
+        For WriteRequirement: returns the requirement with lowest hierarchy (least restrictive)
+                             Unspecified (None) stays as None
+
+        Per DSP0272:
+        - ReadRequirement not specified = Mandatory
+        - WriteRequirement not specified = None (no write requirement)
         """
         if requirement_type == 'ReadRequirement':
-            # Return the requirement with hierarchy value 4 (Mandatory)
-            for req in [req1, req2]:
-                if REQUIREMENT_HIERARCHY.get(req, 0) == 4:
-                    return req
-            return req1 if req1 is not None else req2
-        else:  # WriteRequirement
-            # Return the requirement with hierarchy value 0 (least restrictive)
-            return min(req1, req2, key=lambda r: REQUIREMENT_HIERARCHY.get(r, 0))
+            # Normalize None to "Mandatory" for ReadRequirement
+            normalized_req1 = "Mandatory" if req1 is None else req1
+            normalized_req2 = "Mandatory" if req2 is None else req2
+            # Return the requirement with the highest hierarchy value (most restrictive)
+            return max(normalized_req1, normalized_req2, key=lambda r: REQUIREMENT_HIERARCHY.get(r, 0))
+        else:
+            # For WriteRequirement, None stays as None
+            return max(req1, req2, key=lambda r: REQUIREMENT_HIERARCHY.get(r, 0))
 
     def compare_versions(ver1, ver2, use_max=True):
         """Compare two version strings and return the more restrictive one"""
@@ -141,6 +146,12 @@ def dict_merge(dct, merge_dct):
                 f'{type(dct[k]).__name__} vs {type(v).__name__}. '
                 f'Keeping existing value.'
             )
+
+    # Handle implicit requirements: if merge_dct has content (defines the resource)
+    # but doesn't explicitly specify ReadRequirement, treat it as Mandatory per DSP0272
+    if merge_dct and 'ReadRequirement' not in merge_dct and 'ReadRequirement' in dct:
+        # merge_dct defines this resource but didn't specify ReadRequirement (implicitly Mandatory)
+        dct['ReadRequirement'] = get_more_restrictive_requirement(dct['ReadRequirement'], None, requirement_type='ReadRequirement')
 
 
 def updateWithProfile(profile, data):
