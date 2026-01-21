@@ -142,15 +142,18 @@ def renderHtml(results, tool_version, startTick, nowTick, service):
 
     for k, my_result in results.items():
         for msg in my_result['messages']:
-            if msg.result in [testResultEnum.PASS]:
+            if msg.result == testResultEnum.PASS:
                 summary['pass'] += 1
-            if msg.result in [testResultEnum.NOT_TESTED]:
+            elif msg.result == testResultEnum.FAIL:
+                summary['error'] += 1
+            elif msg.result == testResultEnum.WARN:
+                summary['warning'] += 1
+            elif msg.result == testResultEnum.NOT_TESTED:
                 summary['not_tested'] += 1
+        # to avoid double counting, only count if record doesn't have a 'result' attribute
         for record in my_result['records']:
-            if record.levelname.lower() in ['error', 'warning']:
+            if not record.result and record.levelname.lower() in ['error', 'warning']:
                 summary[record.levelname.lower()] += 1
-            if record.result:
-                summary[record.result] += 1
 
     important_block = tag.div('<b>Results Summary</b>')
     important_block += tag.div(", ".join([
@@ -232,10 +235,16 @@ def renderHtml(results, tool_version, startTick, nowTick, service):
         my_summary = Counter()
 
         for msg in my_result['messages']:
-            if msg.result in [testResultEnum.PASS]:
+            if msg.result == testResultEnum.PASS:
                 my_summary['pass'] += 1
-            if msg.result in [testResultEnum.NOT_TESTED]:
+            elif msg.result == testResultEnum.NOT_TESTED:
                 my_summary['not_tested'] += 1
+            elif msg.result == testResultEnum.FAIL:
+                my_summary['fail'] += 1
+            elif msg.result == testResultEnum.WARN:
+                my_summary['warn'] += 1
+            elif msg.result in [testResultEnum.NOPASS, testResultEnum.OK, testResultEnum.NA]:
+                my_summary[msg.result.value.lower()] += 1
 
         for record in my_result['records']:
             if record.levelname.lower() in ['error', 'warning']:
