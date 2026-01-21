@@ -164,16 +164,13 @@ def renderHtml(results, finalCounts, tool_version, startTick, nowTick, service):
         ]))
     htmlStrBodyHeader += tag.tr(tag.td(important_block, 'class="center"'))
 
-    infos_left, infos_right = dict(), dict()
-    for key in sorted(finalCounts.keys()):
-        if finalCounts.get(key) == 0:
-            continue
-        if len(infos_left) <= len(infos_right):
-            infos_left[key] = finalCounts[key]
-        else:
-            infos_right[key] = finalCounts[key]
+    # Filter non-zero counts and split into two columns
+    non_zero_items = [(k, v) for k, v in sorted(finalCounts.items()) if v != 0]
+    infos_left = dict(non_zero_items[::2])   # every other item starting at 0
+    infos_right = dict(non_zero_items[1::2])  # every other item starting at 1
 
-    htmlStrCounts = (tag.div(infoBlock(infos_left), 'class=\'column log\'') + tag.div(infoBlock(infos_right), 'class=\'column log\''))
+    htmlStrCounts = (tag.div(infoBlock(infos_left), 'class=\'column log\'') +
+                     tag.div(infoBlock(infos_right), 'class=\'column log\''))
 
     htmlStrBodyHeader += tag.tr(tag.td(htmlStrCounts))
 

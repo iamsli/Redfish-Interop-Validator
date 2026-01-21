@@ -236,6 +236,13 @@ def main(argslist=None, configfile=None):
                                 x.name = current_profile_name + ' -- ' + x.name
                             if item_name in results:
                                 results[item_name]['messages'].extend(item['messages'])
+                                # Update timing and payload info if it wasn't set before
+                                if results[item_name].get('rtime') == 'n/a' and item.get('rtime') != 'n/a':
+                                    results[item_name]['rtime'] = item['rtime']
+                                if not results[item_name].get('payload') and item.get('payload'):
+                                    results[item_name]['payload'] = item['payload']
+                                if results[item_name].get('rcode') == 0 and item.get('rcode') != 0:
+                                    results[item_name]['rcode'] = item['rcode']
                             else:
                                 results[item_name] = item
                 else:

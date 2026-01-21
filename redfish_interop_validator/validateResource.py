@@ -210,7 +210,7 @@ def validateURITree(URI, profile, uriName, expectedType=None, expectedSchema=Non
     
     links, limited_links = links if links else ({}, {})
     for skipped_link in limited_links:
-        allLinks.add(limited_links[skipped_link])
+        allLinks.add(limited_links[skipped_link].rstrip('/'))
 
     if resource_obj:
         SchemaType = getType(resource_obj.jsondata.get('@odata.type', 'NoType'))
@@ -233,8 +233,8 @@ def validateURITree(URI, profile, uriName, expectedType=None, expectedSchema=Non
             message_list.append(msg)
 
         currentLinks = [(link, links[link], resource_obj) for link in links]
-        # Get max_workers from config, default to 10
-        max_workers = traverseInterop.config.get('max_workers', 10)
+        # Get max_workers from config with default of 100
+        max_workers = traverseInterop.config.get('max_workers', 100)
         results_lock = threading.Lock()
 
         # todo : churning a lot of links, causing possible slowdown even with set checks
@@ -259,6 +259,7 @@ def validateURITree(URI, profile, uriName, expectedType=None, expectedSchema=Non
                     refLinks.append((linkName, link, parent))
                     continue
 
+                allLinks.add(link.rstrip('/'))
                 links_to_process.append((linkName, link, parent))
 
             # Skip parallel processing if no links to process
@@ -312,7 +313,7 @@ def validateURITree(URI, profile, uriName, expectedType=None, expectedSchema=Non
 
                         with results_lock:
                             for skipped_link in inner_limited_links:
-                                allLinks.add(inner_limited_links[skipped_link])
+                                allLinks.add(inner_limited_links[skipped_link].rstrip('/'))
 
                         innerLinksTuple = [(link, inner_links[link], linkobj) for link in inner_links]
 
