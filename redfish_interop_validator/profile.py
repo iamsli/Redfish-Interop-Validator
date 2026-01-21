@@ -241,31 +241,17 @@ def getProfiles(profile, directories, chain=None, online=False):
         return [], []
     chain.append(profile_name)
 
-    # Gather all included profiles and merge them into the main profile
-    # This processes them simultaneously to avoid polling the target machine multiple times
     required_profiles = profile.get('RequiredProfiles', {})
     for target_name, target_profile_info in required_profiles.items():
         profile_data = parseProfileInclude(target_name, target_profile_info, directories, online)
 
         if profile_data:
-            # Merge the included profile's Resources into the main profile
-            if 'Resources' not in profile:
-                profile['Resources'] = {}
-            included_resources = profile_data.get('Resources', {})
-            for resource_type, resource_data in included_resources.items():
-                if resource_type not in profile['Resources']:
-                    profile['Resources'][resource_type] = {}
-                dict_merge(profile['Resources'][resource_type], resource_data)
-
             profile_includes.append(profile_data)
 
             inner_includes, inner_reqs = getProfiles(profile_data, directories, chain)
             profile_includes.extend(inner_includes)
             required_by_resource.extend(inner_reqs)
-        
-    # Process all RequiredResourceProfile by modifying profiles
     profile_resources = profile.get('Resources', {})
-    
     for resource_name, resource in profile_resources.items():
         # Modify just the resource or its UseCases.  Should not have concurrent UseCases and RequiredResourceProfile in Resource
         if 'UseCases' not in resource:
@@ -280,9 +266,7 @@ def getProfiles(profile, directories, chain=None, online=False):
 
                 if profile_data:
                     target_resources = profile_data.get('Resources')
-                    # Merge if our data exists
                     if resource_name in target_resources:
-                        dict_merge(inner_object, target_resources[resource_name])
                         required_by_resource.append(profile_data)
                     else:
                         my_logger.error('RequiredProfiles Import Error: Import {} does not have Resource {}'.format(target_name, resource_name))
