@@ -77,7 +77,7 @@ def applyInfoSuccessColor(num, entry):
     return tag.div(entry, attr=style)
 
 
-def renderHtml(results, tool_version, startTick, nowTick, service):
+def renderHtml(results, finalCounts, tool_version, startTick, nowTick, service):
     # Render html
     config = service.config
     config_str = ', '.join(sorted(list(config.keys() - set(['systeminfo', 'targetip', 'password', 'description']))))
@@ -163,6 +163,19 @@ def renderHtml(results, tool_version, startTick, nowTick, service):
         'Not Tested: {}'.format(summary['not_tested']),
         ]))
     htmlStrBodyHeader += tag.tr(tag.td(important_block, 'class="center"'))
+
+    infos_left, infos_right = dict(), dict()
+    for key in sorted(finalCounts.keys()):
+        if finalCounts.get(key) == 0:
+            continue
+        if len(infos_left) <= len(infos_right):
+            infos_left[key] = finalCounts[key]
+        else:
+            infos_right[key] = finalCounts[key]
+
+    htmlStrCounts = (tag.div(infoBlock(infos_left), 'class=\'column log\'') + tag.div(infoBlock(infos_right), 'class=\'column log\''))
+
+    htmlStrBodyHeader += tag.tr(tag.td(htmlStrCounts))
 
     infos = {x: config[x] for x in config if x not in ['systeminfo', 'ip', 'password', 'description']}
     infos_left, infos_right = dict(), dict()

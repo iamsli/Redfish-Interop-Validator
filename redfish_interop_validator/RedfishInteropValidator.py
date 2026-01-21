@@ -196,8 +196,6 @@ def main(argslist=None, configfile=None):
             profile_name = profile.get('ProfileName')
             profile_version = profile.get('ProfileVersion')
 
-            # Create a list of profiles, required imports, and show their hashes
-            # Note: getProfiles() merges included profile resources into the parent profile
             included_profiles, required_by_resource = getProfiles(profile, [os.getcwd()] + my_paths, online=args.online_profiles)
 
             my_logger.info('Profile Hashes (included by {}): '.format(file_name))
@@ -212,29 +210,36 @@ def main(argslist=None, configfile=None):
                 inner_profile_version = inner_profile.get('ProfileVersion')
                 my_logger.info('\t{} {}, dict md5 hash: {}'.format(inner_profile_name, inner_profile_version, hashProfile(inner_profile)))
 
-            # Only validate the parent profile since included profiles are already merged into it
-            # Validating included profiles separately would cause duplicate URI traversals
-            if profile_name not in processed_profiles:
-                processed_profiles.add(profile_name)
+            all_profiles_to_validate = [profile] + included_profiles + required_by_resource
 
-                if 'single' in pmode:
-                    success, new_results, _, _ = validateSingleURI(ppath, profile, 'Target', expectedJson=jsonData)
-                elif 'tree' in pmode:
-                    success, new_results, _, _ = validateURITree(ppath, profile, 'Target', expectedJson=jsonData)
+            for current_profile in all_profiles_to_validate:
+                current_profile_name = current_profile.get('ProfileName')
+                current_profile_version = current_profile.get('ProfileVersion')
+                profile_id = f"{current_profile_name}_{current_profile_version}"
+
+                if profile_id not in processed_profiles:
+                    processed_profiles.add(profile_id)
+                    my_logger.info('Validating profile: {} {}'.format(current_profile_name, current_profile_version))
+
+                    if 'single' in pmode:
+                        success, new_results, _, _ = validateSingleURI(ppath, current_profile, 'Target', expectedJson=jsonData)
+                    elif 'tree' in pmode:
+                        success, new_results, _, _ = validateURITree(ppath, current_profile, 'Target', expectedJson=jsonData)
+                    else:
+                        success, new_results, _, _ = validateURITree('/redfish/v1/', current_profile, 'ServiceRoot', expectedJson=jsonData)
+
+                    if results is None:
+                        results = new_results
+                    else:
+                        for item_name, item in new_results.items():
+                            for x in item['messages']:
+                                x.name = current_profile_name + ' -- ' + x.name
+                            if item_name in results:
+                                results[item_name]['messages'].extend(item['messages'])
+                            else:
+                                results[item_name] = item
                 else:
-                    success, new_results, _, _ = validateURITree('/redfish/v1/', profile, 'ServiceRoot', expectedJson=jsonData)
-                if results is None:
-                    results = new_results
-                else:
-                    for item_name, item in new_results.items():
-                        for x in item['messages']:
-                            x.name = profile_name + ' -- ' + x.name
-                        if item_name in results:
-                            results[item_name]['messages'].extend(item['messages'])
-                        else:
-                            results[item_name] = item
-            else:
-                my_logger.warning("Profile {} already processed, skipping".format(profile_name))
+                    my_logger.info("Profile {} {} already processed, skipping".format(current_profile_name, current_profile_version))
     except traverseInterop.AuthenticationError as e:
         # log authentication error and terminate program
         my_logger.error('{}'.format(e))
@@ -260,6 +265,9 @@ def main(argslist=None, configfile=None):
                 final_counts['pass'] += 1
             elif msg.result == testResultEnum.NOT_TESTED:
                 final_counts['nottested'] += 1
+            elif msg.result == testResultEnum.FAIL:
+                # Count failures by their specific name for detailed summary
+                final_counts[msg.name] += 1
 
         warns = [x for x in my_result['records'] if x.levelno == logger.Level.WARN]
         errors = [x for x in my_result['records'] if x.levelno == logger.Level.ERROR]
@@ -281,7 +289,7 @@ def main(argslist=None, configfile=None):
 
     import redfish_interop_validator.tohtml as tohtml
 
-    html_str = tohtml.renderHtml(results, tool_version, start_tick, now_tick, currentService)
+    html_str = tohtml.renderHtml(results, final_counts, tool_version, start_tick, now_tick, currentService)
 
     lastResultsPage = datetime.strftime(start_tick, os.path.join(logpath, "InteropHtmlLog_%m_%d_%Y_%H%M%S.html"))
 
