@@ -58,89 +58,21 @@ def getProfilesMatchingName(name, directories):
 
 def dict_merge(dct, merge_dct):
     """
-    Smart recursive dict merge
-
-    Chooses the most restrictive values when merging:
-    - MinVersion/MinCount: uses maximum (most restrictive)
-    - MaxVersion/MaxCount: uses minimum (most restrictive)
-    - ReadRequirement/WriteRequirement: uses hierarchy (Mandatory > Recommended > IfImplemented > Supported)
-    - Arrays: merges/unions instead of replacing
-    - ConditionalRequirements: merges lists
-
+    https://gist.github.com/angstwad/bf22d1822c38a92ec0a9 modified
+    Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    `dct``.
     :param dct: dict onto which the merge is executed
-    :param merge_dct: dict merged into dct
+    :param merge_dct: dct merged into dct
     :return: None
     """
-    # Requirement hierarchy: higher value = more restrictive
-    REQUIREMENT_HIERARCHY = {
-        'Mandatory': 4,
-        'Recommended': 3,
-        'IfImplemented': 2,
-        'Supported': 1,
-        None: 4 # per DSP0272 when unspecified Requirement, it's considered Mandatory
-    }
-
-    def get_more_restrictive_requirement(req1, req2, requirement_type='ReadRequirement'):
-        """Returns the more restrictive requirement
-
-        For ReadRequirement: returns value with hierarchy 4 (Mandatory)
-        For WriteRequirement: returns value with hierarchy 0 (least restrictive)
-        """
-        if requirement_type == 'ReadRequirement':
-            # Return the requirement with hierarchy value 4 (Mandatory)
-            for req in [req1, req2]:
-                if REQUIREMENT_HIERARCHY.get(req, 0) == 4:
-                    return req
-            return req1 if req1 is not None else req2
-        else:  # WriteRequirement
-            # Return the requirement with hierarchy value 0 (least restrictive)
-            return min(req1, req2, key=lambda r: REQUIREMENT_HIERARCHY.get(r, 0))
-
-    def compare_versions(ver1, ver2, use_max=True):
-        """Compare two version strings and return the more restrictive one"""
-        if ver1 is None:
-            return ver2
-        if ver2 is None:
-            return ver1
-
-        return max(ver1, ver2, key=lambda v: splitVersionString(str(v))) if use_max else min(ver1, ver2, key=lambda v: splitVersionString(str(v)))
-
-    def merge_lists(list1, list2):
-        """Merge two lists, removing duplicates while preserving order"""
-        seen = set()
-        merged = []
-        for item in list1 + list2:
-            item_key = json.dumps(item, sort_keys=True) if isinstance(item, dict) else item
-            if item_key not in seen:
-                seen.add(item_key)
-                merged.append(item)
-        return merged
-
-    for k, v in merge_dct.items():
-        """Build merged profile based on more restrictive values"""
-        if k in ('ReadRequirement', 'WriteRequirement'):
-            # Handle missing keys as None (Mandatory for ReadRequirement per DSP0272)
-            dct[k] = get_more_restrictive_requirement(dct.get(k), v, requirement_type=k)
-        elif k not in dct:
-            dct[k] = v
-        elif k == 'MinVersion':
-            dct[k] = compare_versions(dct[k], v, use_max=True)
-        elif k == 'MaxVersion':
-            dct[k] = compare_versions(dct[k], v, use_max=False)
-        elif k == 'MinCount':
-            dct[k] = max(dct[k], v)
-        elif k == 'MaxCount':
-            dct[k] = min(dct[k], v)
-        elif isinstance(dct[k], dict) and isinstance(v, Mapping):
-            dict_merge(dct[k], v)
-        elif isinstance(dct[k], list) and isinstance(v, list):
-            dct[k] = merge_lists(dct[k], v)
-        elif type(dct[k]) != type(v):
-            my_logger.warning(
-                f'Type conflict during merge for key "{k}": '
-                f'{type(dct[k]).__name__} vs {type(v).__name__}. '
-                f'Keeping existing value.'
-            )
+    for k in merge_dct:
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
 
 
 def updateWithProfile(profile, data):
@@ -230,22 +162,13 @@ def getProfiles(profile, directories, chain=None, online=False):
         return [], []
     chain.append(profile_name)
 
-    # Gather all included profiles and merge them into the main profile
-    # This processes them simultaneously to avoid polling the target machine multiple times
+    # Gather all included profiles, these are each run independently in validateResource.
+    # TODO: Process them simultaneously in validateResource, to avoid polling the target machine multiple times
     required_profiles = profile.get('RequiredProfiles', {})
     for target_name, target_profile_info in required_profiles.items():
         profile_data = parseProfileInclude(target_name, target_profile_info, directories, online)
 
         if profile_data:
-            # Merge the included profile's Resources into the main profile
-            if 'Resources' not in profile:
-                profile['Resources'] = {}
-            included_resources = profile_data.get('Resources', {})
-            for resource_type, resource_data in included_resources.items():
-                if resource_type not in profile['Resources']:
-                    profile['Resources'][resource_type] = {}
-                dict_merge(profile['Resources'][resource_type], resource_data)
-
             profile_includes.append(profile_data)
 
             inner_includes, inner_reqs = getProfiles(profile_data, directories, chain)
@@ -254,9 +177,8 @@ def getProfiles(profile, directories, chain=None, online=False):
 
     # Process all RequiredResourceProfile by modifying profiles
     profile_resources = profile.get('Resources', {})
-
     for resource_name, resource in profile_resources.items():
-        # Modify just the resource or its UseCases.  Should not have concurrent UseCases and RequiredResourceProfile in Resource
+        # Modify just the resource or its UseCases. Should not have concurrent UseCases and RequiredResourceProfile in Resource
         if 'UseCases' not in resource:
             modifying_objects = [resource]
         else:
@@ -269,6 +191,7 @@ def getProfiles(profile, directories, chain=None, online=False):
 
                 if profile_data:
                     target_resources = profile_data.get('Resources')
+                    # Merge if our data exists
                     if resource_name in target_resources:
                         dict_merge(inner_object, target_resources[resource_name])
                         required_by_resource.append(profile_data)

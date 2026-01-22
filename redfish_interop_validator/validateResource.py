@@ -234,7 +234,7 @@ def validateURITree(URI, profile, uriName, expectedType=None, expectedSchema=Non
 
         currentLinks = [(link, links[link], resource_obj) for link in links]
         # Get max_workers from config with default of 100
-        max_workers = traverseInterop.config.get('max_workers', 100)
+        max_workers = traverseInterop.config.get('max_workers', 50)
         results_lock = threading.Lock()
 
         # todo : churning a lot of links, causing possible slowdown even with set checks
