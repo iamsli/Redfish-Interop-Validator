@@ -196,57 +196,48 @@ def main(argslist=None, configfile=None):
             profile_name = profile.get('ProfileName')
             profile_version = profile.get('ProfileVersion')
 
+            # Create a list of profiles, required imports, and show their hashes
             included_profiles, required_by_resource = getProfiles(profile, [os.getcwd()] + my_paths, online=args.online_profiles)
+
+            all_profiles = [profile] + included_profiles
 
             my_logger.info('Profile Hashes (included by {}): '.format(file_name))
             for inner_profile in included_profiles:
-                inner_profile_name = inner_profile.get('ProfileName')
-                inner_profile_version = inner_profile.get('ProfileVersion')
+                inner_profile_name = profile.get('ProfileName')
+                inner_profile_version = profile.get('ProfileVersion')
                 my_logger.info('\t{} {}, dict md5 hash: {}'.format(inner_profile_name, inner_profile_version, hashProfile(inner_profile)))
 
             my_logger.info('Profile Hashes (required by Resource): '.format(file_name))
             for inner_profile in required_by_resource:
-                inner_profile_name = inner_profile.get('ProfileName')
-                inner_profile_version = inner_profile.get('ProfileVersion')
+                inner_profile_name = profile.get('ProfileName')
+                inner_profile_version = profile.get('ProfileVersion')
                 my_logger.info('\t{} {}, dict md5 hash: {}'.format(inner_profile_name, inner_profile_version, hashProfile(inner_profile)))
 
-            all_profiles_to_validate = [profile] + included_profiles + required_by_resource
-
-            for current_profile in all_profiles_to_validate:
-                current_profile_name = current_profile.get('ProfileName')
-                current_profile_version = current_profile.get('ProfileVersion')
-                profile_id = f"{current_profile_name}_{current_profile_version}"
-
-                if profile_id not in processed_profiles:
-                    processed_profiles.add(profile_id)
-                    my_logger.info('Validating profile: {} {}'.format(current_profile_name, current_profile_version))
-
-                    if 'single' in pmode:
-                        success, new_results, _, _ = validateSingleURI(ppath, current_profile, 'Target', expectedJson=jsonData)
-                    elif 'tree' in pmode:
-                        success, new_results, _, _ = validateURITree(ppath, current_profile, 'Target', expectedJson=jsonData)
-                    else:
-                        success, new_results, _, _ = validateURITree('/redfish/v1/', current_profile, 'ServiceRoot', expectedJson=jsonData)
-
-                    if results is None:
-                        results = new_results
-                    else:
-                        for item_name, item in new_results.items():
-                            for x in item['messages']:
-                                x.name = current_profile_name + ' -- ' + x.name
-                            if item_name in results:
-                                results[item_name]['messages'].extend(item['messages'])
-                                # Update timing and payload info if it wasn't set before
-                                if results[item_name].get('rtime') == 'n/a' and item.get('rtime') != 'n/a':
-                                    results[item_name]['rtime'] = item['rtime']
-                                if not results[item_name].get('payload') and item.get('payload'):
-                                    results[item_name]['payload'] = item['payload']
-                                if results[item_name].get('rcode') == 0 and item.get('rcode') != 0:
-                                    results[item_name]['rcode'] = item['rcode']
-                            else:
-                                results[item_name] = item
+            for profile_to_process in all_profiles:
+                processing_profile_name = profile_to_process.get('ProfileName')
+                if processing_profile_name not in processed_profiles:
+                    processed_profiles.add(profile_name)
                 else:
-                    my_logger.info("Profile {} {} already processed, skipping".format(current_profile_name, current_profile_version))
+                    my_logger.warning("Import Warning: Profile {} already processed".format({}))
+
+                if 'single' in pmode:
+                    success, new_results, _, _ = validateSingleURI(ppath, profile_to_process, 'Target', expectedJson=jsonData)
+                elif 'tree' in pmode:
+                    success, new_results, _, _ = validateURITree(ppath, profile_to_process, 'Target', expectedJson=jsonData)
+                else:
+                    success, new_results, _, _ = validateURITree('/redfish/v1/', profile_to_process, 'ServiceRoot', expectedJson=jsonData)
+                if results is None:
+                    results = new_results
+                else:
+                    for item_name, item in new_results.items():
+                        for x in item['messages']:
+                            x.name = profile_name + ' -- ' + x.name
+                        if item_name in results:
+                            results[item_name]['messages'].extend(item['messages'])
+                        else:
+                            results[item_name] = item
+                        # resultsNew = {profileName+key: resultsNew[key] for key in resultsNew if key in results}
+                        # results.update(resultsNew)
     except traverseInterop.AuthenticationError as e:
         # log authentication error and terminate program
         my_logger.error('{}'.format(e))
@@ -268,13 +259,10 @@ def main(argslist=None, configfile=None):
     for k, my_result in results.items():
 
         for msg in my_result['messages']:
-            if msg.result == testResultEnum.PASS:
+            if msg.result in [testResultEnum.PASS]:
                 final_counts['pass'] += 1
-            elif msg.result == testResultEnum.NOT_TESTED:
-                final_counts['nottested'] += 1
-            elif msg.result == testResultEnum.FAIL:
-                # Count failures by their specific name for detailed summary
-                final_counts[msg.name] += 1
+            if msg.result in [testResultEnum.NOT_TESTED]:
+                final_counts['not_tested'] += 1
 
         warns = [x for x in my_result['records'] if x.levelno == logger.Level.WARN]
         errors = [x for x in my_result['records'] if x.levelno == logger.Level.ERROR]
@@ -304,16 +292,16 @@ def main(argslist=None, configfile=None):
 
     my_logger.info("\nResults Summary:")
     my_logger.info(", ".join([
-        'Pass: {}'.format(final_counts.get('pass', 0)),
-        'Fail: {}'.format(final_counts.get('fail', 0) + final_counts.get('error', 0)),
-        'Warning: {}'.format(final_counts.get('warn', 0) + final_counts.get('warning', 0)),
-        'Not Tested: {}'.format(final_counts.get('nottested', 0)),
+        'Pass: {}'.format(final_counts['pass']),
+        'Fail: {}'.format(final_counts['error']),
+        'Warning: {}'.format(final_counts['warning']),
+        'Not Tested: {}'.format(final_counts['not_tested']),
         ]))
 
-    success = (final_counts.get('fail', 0) + final_counts.get('error', 0)) == 0
+    success = final_counts['error'] == 0
 
     if not success:
-        my_logger.error("Validation has failed: {} problems found".format(final_counts.get('fail', 0) + final_counts.get('error', 0)))
+        my_logger.error("Validation has failed: {} problems found".format(final_counts['error']))
     else:
         my_logger.info("Validation has succeeded.")
         status_code = 0
