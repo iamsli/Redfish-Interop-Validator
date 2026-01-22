@@ -247,10 +247,6 @@ def validateURITree(URI, profile, uriName, expectedType=None, expectedSchema=Non
                 if link is None or link.rstrip('/') in allLinks:
                     continue
 
-                # TODO: !!!!!!! remove hardcoded skips (make configurable???) These take a long time + are unnecessary tests
-                if 'TelemetryService' in link or 'Oem' in link or '/JsonSchemas' in link or '/Registries' in link or 'SecureBoot' in link or 'JobService' in link:
-                    continue
-
                 if '#' in link:
                     # NOTE: Skips referenced Links (using pound signs), this program currently only works with direct links
                     continue
